@@ -86,15 +86,14 @@
   </div>
  </div>
 
- <footer>Данные: NASA FIRMS (VIIRS) · Карта: © OpenStreetMap, © CARTO</footer>
+ <footer>Данные: NASA FIRMS (VIIRS) · Карта: © Esri</footer>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const map = L.map('map').setView([-28.0, 134.0], 4);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  {attribution:'© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom:19}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {attribution:'Esri', maxZoom:16}).addTo(map);
 
 let marker, circle;
 function placeMe(lat, lon){
