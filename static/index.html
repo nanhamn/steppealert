@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SteppeAlert — пожары в Австралии</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+ :root{--bg:#0b0f17;--card:#141a26;--line:#232b3b;--text:#f3f4f6;--muted:#9aa3b2;--fire:#ff6b2c;--fire2:#ffb020;--ok:#22c55e;--danger:#ef4444}
+ *{box-sizing:border-box}
+ body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
+ .wrap{max-width:1100px;margin:0 auto;padding:20px 16px 40px}
+ header{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+ .logo{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:24px;
+   background:linear-gradient(135deg,var(--fire),var(--fire2));box-shadow:0 6px 24px rgba(255,107,44,.35)}
+ h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.5px}
+ h1 span{color:var(--fire)}
+ .sub{color:var(--muted);margin:6px 0 20px;font-size:15px;line-height:1.5}
+ .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+ .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+ .stat b{display:block;font-size:24px;font-weight:800;color:var(--fire)}
+ .stat small{color:var(--muted);font-size:13px}
+ .grid{display:grid;grid-template-columns:1fr 340px;gap:16px}
+ .card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+ #map{height:520px;background:#0e131d}
+ .panel{padding:18px}
+ .panel h2{margin:0 0 4px;font-size:18px}
+ .panel p{margin:0 0 14px;color:var(--muted);font-size:14px;line-height:1.45}
+ label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px;text-transform:uppercase;letter-spacing:.5px}
+ input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0e131d;color:var(--text);font:inherit;font-size:15px}
+ input:focus{outline:none;border-color:var(--fire)}
+ .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+ button{margin-top:16px;width:100%;padding:13px;border:0;border-radius:12px;font:inherit;font-weight:800;font-size:16px;cursor:pointer;
+   color:#1a0d05;background:linear-gradient(135deg,var(--fire),var(--fire2));transition:transform .1s}
+ button:active{transform:scale(.98)}
+ #status{margin-top:14px;padding:14px;border-radius:12px;font-weight:600;display:none;line-height:1.4}
+ #status.ok{display:block;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);color:#86efac}
+ #status.bad{display:block;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.45);color:#fca5a5}
+ .badge{display:inline-block;font-size:12px;padding:4px 10px;border-radius:999px;background:#1f2737;color:var(--muted);margin-top:4px}
+ .badge.live{background:rgba(34,197,94,.15);color:#86efac}
+ .legend{display:flex;gap:16px;padding:10px 14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);flex-wrap:wrap}
+ .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+ .pulse{animation:p 1.6s infinite}
+ @keyframes p{0%{opacity:1}50%{opacity:.45}100%{opacity:1}}
+ footer{color:var(--muted);font-size:12px;margin-top:18px;text-align:center}
+ .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--card);color:var(--text)}
+ @media (max-width:820px){.grid{grid-template-columns:1fr}#map{height:360px}.stats{grid-template-columns:1fr 1fr 1fr}.stat b{font-size:18px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+ <header><div class="logo">🔥</div><h1>Steppe<span>Alert</span></h1></header>
+ <p class="sub">Спутники NASA каждый день видят пожары в Австралии. Отметьте своё поле или дом на карте — мы скажем, есть ли огонь рядом.</p>
+
+ <div class="stats">
+  <div class="stat"><b id="cnt">—</b><small>очагов огня за сутки</small></div>
+  <div class="stat"><b>24 млн га</b><small>сгорело в «Чёрное лето» 2019–20</small></div>
+  <div class="stat"><b>~3 млрд</b><small>животных погибли или лишились дома</small></div>
+ </div>
+
+ <div class="grid">
+  <div class="card">
+   <div id="map"></div>
+   <div class="legend">
+    <span><i class="dot pulse" style="background:var(--danger)"></i>Очаг огня</span>
+    <span><i class="dot" style="background:var(--fire2)"></i>Радиус проверки</span>
+    <span id="src" class="badge">Загрузка…</span>
+   </div>
+  </div>
+
+  <div class="card panel">
+   <h2>Проверить моё место</h2>
+   <p>Нажмите на карту или введите координаты.</p>
+   <form id="f">
+    <div class="row">
+     <div><label for="lat">Широта</label><input id="lat" placeholder="-33.70" required></div>
+     <div><label for="lon">Долгота</label><input id="lon" placeholder="150.30" required></div>
+    </div>
+    <label for="r">Радиус, км</label><input id="r" type="number" value="20" min="1" max="200">
+    <label for="chat">Telegram chat_id (необязательно)</label><input id="chat" placeholder="123456789">
+    <button>Проверить</button>
+   </form>
+   <div id="status"></div>
+  </div>
+ </div>
+
+ <footer>Данные: NASA FIRMS (VIIRS) · Карта: © OpenStreetMap, © CARTO</footer>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const map = L.map('map').setView([-28.0, 134.0], 4);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  {attribution:'© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom:19}).addTo(map);
+
+let marker, circle;
+function placeMe(lat, lon){
+  if (marker) marker.remove();
+  if (circle) circle.remove();
+  marker = L.marker([lat, lon]).addTo(map);
+  circle = L.circle([lat, lon], {radius:(+$('r').value||20)*1000, color:'#ffb020', weight:2, fillOpacity:.08}).addTo(map);
+}
+map.on('click', e => {
+  $('lat').value = e.latlng.lat.toFixed(4);
+  $('lon').value = e.latlng.lng.toFixed(4);
+  placeMe(e.latlng.lat, e.latlng.lng);
+});
+
+fetch('/api/fires').then(r => r.json()).then(d => {
+  d.fires.forEach(f => L.circleMarker([f.lat, f.lon],
+    {radius:6, color:'#ef4444', fillColor:'#ff6b2c', fillOpacity:.9, weight:2})
+    .addTo(map).bindPopup(`🔥 Очаг огня<br><small>${f.date}</small>`));
+  $('cnt').textContent = d.count;
+  $('src').textContent = d.demo ? 'Демо-данные (нет ключа NASA)' : 'Живые данные NASA FIRMS';
+  if (!d.demo) $('src').classList.add('live');
+}).catch(() => { $('src').textContent = 'Не удалось загрузить данные'; });
+
+$('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const lat = +$('lat').value, lon = +$('lon').value;
+  placeMe(lat, lon);
+  const q = new URLSearchParams({lat, lon, radius_km: $('r').value || 20});
+  if ($('chat').value) q.set('chat_id', $('chat').value);
+  const s = $('status');
+  s.className = ''; s.style.display = 'block'; s.textContent = 'Проверяем…';
+  try {
+    const d = await (await fetch('/api/check?' + q)).json();
+    if (d.danger) {
+      s.className = 'bad';
+      s.innerHTML = `🔥 Опасность! Ближайший очаг в <b>${d.near[0].distance_km} км</b>.<br>Очагов в радиусе: ${d.near.length}` +
+        (d.telegram_sent ? '<br>📨 Сообщение отправлено в Telegram' : '');
+    } else {
+      s.className = 'ok';
+      s.textContent = '✅ Рядом очагов огня не найдено';
+    }
+  } catch { s.className = 'bad'; s.textContent = 'Ошибка связи с сервером'; }
+});
+</script>
+</body>
+</html>
