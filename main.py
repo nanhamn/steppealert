@@ -4,7 +4,7 @@
   FIRMS_MAP_KEY       ключ NASA FIRMS (бесплатно). Без него работают демо-данные.
   TELEGRAM_BOT_TOKEN  токен бота от @BotFather для отправки уведомлений.
 """
-import csv, io, math, os
+import csv, io, math, os, time
 import httpx
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
@@ -27,25 +27,52 @@ def km(lat1, lon1, lat2, lon2):
          math.cos(lat1 * p) * math.cos(lat2 * p) * math.sin((lon2 - lon1) * p / 2) ** 2)
     return 12742 * math.asin(math.sqrt(a))
 
+# Несколько спутников: если один не обновился, данные придут с других
+SOURCES = ["VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "VIIRS_SNPP_NRT", "MODIS_NRT"]
+CACHE = {}          # days -> (время, очаги, ошибки)
+CACHE_SEC = 600     # не спрашиваем NASA чаще раза в 10 минут
+
 async def get_fires(days: int = 1):
+    """Возвращает (очаги, демо?, ошибки)."""
     if not FIRMS_KEY:
-        return DEMO, True
-    url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{FIRMS_KEY}/VIIRS_SNPP_NRT/{BBOX}/{days}"
+        return DEMO, True, []
+    hit = CACHE.get(days)
+    if hit and time.time() - hit[0] < CACHE_SEC:
+        return hit[1], False, hit[2]
+    fires, errors, seen = [], [], set()
     async with httpx.AsyncClient(timeout=30) as c:
-        r = await c.get(url)
-    rows = csv.DictReader(io.StringIO(r.text))
-    fires = [{"lat": float(x["latitude"]), "lon": float(x["longitude"]),
-              "date": x["acq_date"], "confidence": x["confidence"]} for x in rows]
-    return fires, False
+        for src in SOURCES:
+            url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{FIRMS_KEY}/{src}/{BBOX}/{days}"
+            try:
+                r = await c.get(url)
+            except httpx.HTTPError as e:
+                errors.append(f"{src}: {e.__class__.__name__}")
+                continue
+            text = r.text.strip()
+            if not text.startswith("latitude"):   # NASA вернула ошибку, а не таблицу
+                errors.append(f"{src}: {text[:120]}")
+                continue
+            for x in csv.DictReader(io.StringIO(text)):
+                key = (round(float(x["latitude"]), 2), round(float(x["longitude"]), 2))
+                if key in seen:                   # одну точку видели два спутника
+                    continue
+                seen.add(key)
+                fires.append({"lat": float(x["latitude"]), "lon": float(x["longitude"]),
+                              "date": f'{x["acq_date"]} {x.get("acq_time", "")}'.strip(),
+                              "confidence": x.get("confidence", ""), "source": src})
+    if len(errors) < len(SOURCES):                # хотя бы один спутник ответил
+        CACHE[days] = (time.time(), fires, errors)
+    return fires, False, errors
 
 @app.get("/api/fires")
 async def fires(days: int = Query(1, ge=1, le=5)):
-    data, demo = await get_fires(days)
-    return {"demo": demo, "count": len(data), "fires": data}
+    data, demo, errors = await get_fires(days)
+    return {"demo": demo, "count": len(data), "fires": data, "errors": errors,
+            "nasa_down": bool(errors) and len(errors) == len(SOURCES)}
 
 @app.get("/api/check")
 async def check(lat: float, lon: float, radius_km: float = 20, chat_id: str | None = None):
-    data, demo = await get_fires(1)
+    data, demo, _ = await get_fires(1)
     near = sorted(
         ({**f, "distance_km": round(km(lat, lon, f["lat"], f["lon"]), 1)} for f in data),
         key=lambda f: f["distance_km"])
