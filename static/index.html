@@ -113,8 +113,14 @@ fetch('/api/fires').then(r => r.json()).then(d => {
     {radius:6, color:'#ef4444', fillColor:'#ff6b2c', fillOpacity:.9, weight:2})
     .addTo(map).bindPopup(`🔥 Очаг огня<br><small>${f.date}</small>`));
   $('cnt').textContent = d.count;
-  $('src').textContent = d.demo ? 'Демо-данные (нет ключа NASA)' : 'Живые данные NASA FIRMS';
-  if (!d.demo) $('src').classList.add('live');
+  if (d.demo) {
+    $('src').textContent = 'Демо-данные (нет ключа NASA)';
+  } else if (d.nasa_down) {
+    $('src').textContent = 'NASA не ответила: ' + (d.errors[0] || '');
+  } else {
+    $('src').textContent = 'Живые данные NASA FIRMS';
+    $('src').classList.add('live');
+  }
 }).catch(() => { $('src').textContent = 'Не удалось загрузить данные'; });
 
 $('f').addEventListener('submit', async e => {
